@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KABHI KABHI ADIDI</title>
+
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #game-container {
+            position: relative;
+            border: 4px solid #333;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background-color: #f0f0f0;
+            background-image:
+                linear-gradient(#ccc 1px, transparent 1px),
+                linear-gradient(90deg, #ccc 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #ui-bar {
+            background-color: #ddd;
+            border-bottom: 2px solid #999;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #game-over-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            border-radius: 10px;
+            display: none;
+        }
+
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            font-size: 16px;
+            margin-top: 20px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="game-container">
+    <div id="ui-bar">
+        <span>KABHI KABHI ADIDI</span>
+        <div>
+            SCORE: <span id="score">0</span> |
+            LIVES: <span id="lives">❤️❤️❤️</span>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="600" height="500"></canvas>
+
+    <div id="game-over-screen">
+        <h1>GAME OVER</h1>
+        <p>Final Score: <span id="final-score">0</span></p>
+        <button onclick="restartGame()">Play Again</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const finalScoreEl = document.getElementById('final-score');
+const gameOverScreen = document.getElementById('game-over-screen');
+
+let gameRunning = true;
+let score = 0;
+let lives = 3;
+let frameCount = 0;
+let difficultyMultiplier = 1;
+
+// 🖼️ enemy image
+const enemyImg = new Image();
+enemyImg.src = "emeny.png";
+
+// 🔊 sounds
+const gameOverSound = new Audio("beep.ogg");
+const bgMusic = new Audio("song.mp3");
+bgMusic.loop = true;
+bgMusic.volume = 0.4;
+
+// ▶️ start music after first key press (browser policy)
+document.addEventListener('keydown', () => {
+    if (bgMusic.paused && gameRunning) {
+        bgMusic.play();
+    }
+}, { once: true });
+
+const player = {
+    x: canvas.width / 2 - 20,
+    y: canvas.height - 60,
+    width: 40,
+    height: 40,
+    speed: 5,
+    dx: 0,
+    color: '#333'
+};
+
+let bullets = [];
+let enemies = [];
+
+document.addEventListener('keydown', (e) => {
+    if (!gameRunning) return;
+
+    if (e.key === 'ArrowRight' || e.key === 'd') {
+        player.dx = player.speed;
+    } else if (e.key === 'ArrowLeft' || e.key === 'a') {
+        player.dx = -player.speed;
+    } else if (e.key === ' ' || e.code === 'Space') {
+        shootBullet();
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'ArrowLeft' || e.key === 'a') {
+        player.dx = 0;
+    }
+});
+
+function shootBullet() {
+    bullets.push({
+        x: player.x + player.width / 2 - 2,
+        y: player.y,
+        width: 4,
+        height: 10,
+        speed: 7
+    });
+}
+
+function createEnemy() {
+    const size = 60;
+    const x = Math.random() * (canvas.width - size);
+
+    enemies.push({
+        x: x,
+        y: -size,
+        width: size,
+        height: size,
+        speed: (Math.random() * 2 + 1) * difficultyMultiplier
+    });
+}
+
+function update() {
+    if (!gameRunning) return;
+
+    player.x += player.dx;
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+    bullets.forEach((bullet, index) => {
+        bullet.y -= bullet.speed;
+        if (bullet.y + bullet.height < 0) {
+            bullets.splice(index, 1);
+        }
+    });
+
+    enemies.forEach((enemy, index) => {
+        enemy.y += enemy.speed;
+
+        if (
+            enemy.x < player.x + player.width &&
+            enemy.x + enemy.width > player.x &&
+            enemy.y < player.y + player.height &&
+            enemy.y + enemy.height > player.y
+        ) {
+            handlePlayerHit(index);
+        }
+
+        if (enemy.y > canvas.height) {
+            enemies.splice(index, 1);
+        }
+    });
+
+    if (frameCount % Math.max(20, (60 - Math.floor(score / 50))) === 0) {
+        createEnemy();
+    }
+
+    bullets.forEach((bullet, bIndex) => {
+        enemies.forEach((enemy, eIndex) => {
+            if (
+                bullet.x < enemy.x + enemy.width &&
+                bullet.x + bullet.width > enemy.x &&
+                bullet.y < enemy.y + enemy.height &&
+                bullet.y + bullet.height > enemy.y
+            ) {
+                enemies.splice(eIndex, 1);
+                bullets.splice(bIndex, 1);
+                increaseScore();
+            }
+        });
+    });
+
+    difficultyMultiplier = 1 + (score / 100);
+
+    frameCount++;
+    draw();
+    requestAnimationFrame(update);
+}
+
+function handlePlayerHit(enemyIndex) {
+    enemies.splice(enemyIndex, 1);
+    lives--;
+    updateLivesUI();
+
+    if (lives <= 0) {
+        endGame();
+    } else {
+        player.color = 'red';
+        setTimeout(() => player.color = '#333', 200);
+    }
+}
+
+function increaseScore() {
+    score += 10;
+    scoreEl.innerText = score;
+}
+
+function updateLivesUI() {
+    let hearts = '';
+    for(let i=0; i<lives; i++) hearts += '❤️';
+    livesEl.innerText = hearts;
+}
+
+function endGame() {
+    gameRunning = false;
+
+    // stop music
+    bgMusic.pause();
+    bgMusic.currentTime = 0;
+
+    // play death sound
+    gameOverSound.currentTime = 0;
+    gameOverSound.play();
+
+    finalScoreEl.innerText = score;
+    gameOverScreen.style.display = 'block';
+}
+
+function restartGame() {
+    score = 0;
+    lives = 3;
+    difficultyMultiplier = 1;
+    bullets = [];
+    enemies = [];
+    player.x = canvas.width / 2 - 20;
+
+    scoreEl.innerText = score;
+    updateLivesUI();
+    gameOverScreen.style.display = 'none';
+
+    gameRunning = true;
+
+    // restart music
+    bgMusic.play();
+
+    update();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.moveTo(player.x + player.width/2, player.y);
+    ctx.lineTo(player.x, player.y + player.height);
+    ctx.lineTo(player.x + player.width, player.y + player.height);
+    ctx.fill();
+
+    ctx.fillStyle = 'red';
+    bullets.forEach(bullet => {
+        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+    });
+
+    enemies.forEach(enemy => {
+        ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height);
+    });
+}
+
+update();
+</script>
+
+</body>
+</html>
